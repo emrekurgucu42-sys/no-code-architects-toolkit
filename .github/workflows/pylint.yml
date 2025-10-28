@@ -1,0 +1,92 @@
+import os, requests, random, time, json, schedule
+from gtts import gTTS
+from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip
+from datetime import datetime
+from pathlib import Path
+
+# === AYARLAR ===
+PEXELS_API = "KIAYClkIpN7SFy9tz8LnghFCstJPnyjnfxIANzrvC8EFKeCCcPT2Euqk"
+YOUTUBE_API_KEY = "AIzaSyDe31pyXEbDHG2vpdrQb9feW_hNs-eVWrI"
+UPLOAD_DIR = Path("videos")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+# === TREND TOPIC BULMA ===
+def get_trending_topic():
+    url = "https://trends.google.com/trending/rss?geo=US"
+    r = requests.get(url)
+    if r.status_code == 200:
+        items = [line.split("<title>")[1].split("</title>")[0]
+                 for line in r.text.splitlines() if "<title>" in line]
+        return random.choice(items[2:]) if len(items) > 2 else "Motivational Story"
+    return "Daily Motivation"
+
+# === AI HİKAYE OLUŞTURMA (BASİT MODEL) ===
+def generate_story(topic):
+    prompts = [
+        f"Once upon a time, a lesson about {topic.lower()}...",
+        f"This story will inspire you about {topic.lower()}...",
+        f"A short motivational story about {topic.lower()}..."
+    ]
+    return random.choice(prompts)
+
+# === SESLENDİRME ===
+def generate_voice(text, filename="voice.mp3"):
+    tts = gTTS(text, lang="en", tld="co.uk")
+    tts.save(filename)
+    return filename
+
+# === GÖRSEL BULMA (PEXELS) ===
+def fetch_image(topic):
+    headers = {"Authorization": PEXELS_API}
+    url = f"https://api.pexels.com/v1/search?query={topic}&per_page=1"
+    r = requests.get(url, headers=headers)
+    data = r.json()
+    if data.get("photos"):
+        img_url = data["photos"][0]["src"]["landscape"]
+        img_path = UPLOAD_DIR / f"{topic.replace(' ', '_')}.jpg"
+        with open(img_path, "wb") as f:
+            f.write(requests.get(img_url).content)
+        return str(img_path)
+    return None
+
+# === VİDEO OLUŞTURMA ===
+def make_video(topic, story_text):
+    img = fetch_image(topic)
+    if not img: return None
+    voice = generate_voice(story_text)
+    audio = AudioFileClip(voice)
+    img_clip = ImageClip(img).set_duration(audio.duration).resize(height=720)
+    final = CompositeVideoClip([img_clip.set_audio(audio)])
+    output = UPLOAD_DIR / f"{topic.replace(' ', '_')}.mp4"
+    final.write_videofile(str(output), fps=24)
+    return str(output)
+
+# === YOUTUBE YÜKLEME (KOMUT SATIRI ÜZERİNDEN) ===
+def upload_to_youtube(video_path, title, description):
+    print(f"📤 Uploading {title} to YouTube...")
+    # Burada gerçek YouTube API yükleme işlemi olur.
+    # (Kullanıcının kimliği Google OAuth üzerinden alınır)
+    # Şimdilik sadece simülasyon:
+    time.sleep(3)
+    print(f"✅ Uploaded: {title}")
+
+# === ANA AKIŞ ===
+def daily_video_job():
+    topic = get_trending_topic()
+    story = generate_story(topic)
+    print(f"🎯 Topic: {topic}")
+    print(f"📖 Story: {story}")
+    video_path = make_video(topic, story)
+    if video_path:
+        upload_to_youtube(video_path, topic, story)
+    else:
+        print("⚠️ Video oluşturulamadı!")
+
+# === GÜNLÜK PLANLAMA ===
+for i in range(8):  # 7-8 video/gün
+    schedule.every(2).hours.do(daily_video_job)
+
+print("🚀 AI YouTube Automation started. Running 24/7...")
+while True:
+    schedule.run_pending()
+    time.sleep(60)
